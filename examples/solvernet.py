@@ -48,10 +48,8 @@ class HarmonicOscillator(nn.Module):
                                  nn.Softplus(),
                                  nn.Linear(10,2))
         
-    def forward(self, t, x, augment=False):
+    def forward(self, t, x):
         delta = 0
-        if augment:
-            delta = self.net(x)
         return (self.M @ x) + delta
 
     def exact(self, x0, t):
@@ -69,15 +67,35 @@ class HarmonicOscillator(nn.Module):
 def torch2np(x):
     return x.cpu().detach().numpy()
 
+class Solver(nn.Module):
+    def __init__(self, r=1):
+        super().__init__()
+        self.r = 1
+        self.finegrid = torch.linspace(0,1,num=r)
+
+    def forward(self, func, x0, times):
+        for t in times:
+            Yr t = []
+            Fr = []
+            for r in range(self.r):
+                func(t, x)
+
+
+
 def main():
-    methods = ['euler', 'midpoint', 'rk4', 'dopri5', 'adams']
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
+    # Constants
     m = 0.01 + torch.abs(torch.randn(1))
     k = 0.01 + torch.abs(torch.randn(1))
-    device = 'cpu:0'
+    # Initial conditions
+    x0 = torch.randn(2).to(device)
+
+    methods = ['euler', 'midpoint', 'rk4', 'dopri5', 'adams']
+    errors = []
     for method in methods:
         model = HarmonicOscillator(m, k).to(device)
         t = torch.linspace(0.,10.,100).to(device)
-        x0 = torch.randn(2).to(device)
 
         y = odeint(model, x0, t, method=method)
         ytrue = model.exact(x0, t)
@@ -86,9 +104,11 @@ def main():
         y = torch2np(y)
         ytrue = torch2np(ytrue)
 
+        diff = L2diff(y[:,0], ytrue[:,0])
+        errors.append(diff)
         print("Method: {:s}, L2 error: {:f}".format(method, L2error(y[:,0], ytrue[:,0])))
 
-        plot(t, y, ytrue)
+    plot_diff(t, np.stack(errors, 1), methods)
 
 def plot(t, y, ytrue):
     plt.figure(figsize=(12,8))
@@ -97,6 +117,21 @@ def plot(t, y, ytrue):
     plt.plot(t, ytrue[:,0], 'b')
     plt.plot(t, ytrue[:,1], 'r')
     plt.show()
+    
+def plot_diff(t, diff, methods):
+    plt.figure(figsize=(12,8))
+    for i, method in enumerate(methods):
+        plt.semilogy(t, diff[:,i], label=method)
+    plt.xlabel("Time", fontsize=20)
+    plt.ylabel("Log error", fontsize=20)
+    plt.xticks(fontsize=14)
+    plt.yticks(fontsize=14)
+    plt.xlim(t[0], t[-1])
+    plt.legend()
+    plt.show()
+
+def L2diff(y, ytrue):
+    return np.sqrt((y - ytrue)**2)
 
 def L2error(y, ytrue):
     return np.sqrt(np.sum((y - ytrue)**2))
